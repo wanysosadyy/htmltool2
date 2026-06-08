@@ -1,0 +1,1607 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HTML 编辑器</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #f3f4f6;
+      color: #1f2937;
+      overflow: hidden;
+    }
+    #editor-shell {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+    }
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      background: rgba(255, 255, 255, 0.96);
+      border-bottom: 1px solid #e5e7eb;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+      flex-shrink: 0;
+      z-index: 100;
+      backdrop-filter: blur(10px);
+    }
+    .toolbar button {
+      min-height: 32px;
+      padding: 6px 12px;
+      border: 1px solid #d1d5db;
+      background: white;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      color: #1f2937;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .toolbar button:hover:not(:disabled) {
+      background: #f9fafb;
+      border-color: #9ca3af;
+      transform: translateY(-1px);
+    }
+    .toolbar button:active:not(:disabled) { transform: translateY(0); }
+    .toolbar button:disabled { opacity: 0.45; cursor: not-allowed; }
+    .toolbar button.primary {
+      background: #2563eb; color: white; border-color: #2563eb;
+      box-shadow: 0 1px 2px rgba(37, 99, 235, 0.25);
+    }
+    .toolbar button.primary:hover:not(:disabled) { background: #1d4ed8; border-color: #1d4ed8; }
+    .toolbar .switch {
+      display: flex; align-items: center; gap: 8px;
+      cursor: pointer; user-select: none; font-size: 13px;
+      color: #374151;
+      padding: 4px 8px 4px 4px;
+      border: 1px solid #e5e7eb;
+      border-radius: 999px;
+      background: #f9fafb;
+    }
+    .toolbar .switch:has(input:checked) {
+      color: #1d4ed8;
+      border-color: #bfdbfe;
+      background: #eff6ff;
+    }
+    .toolbar .switch:has(input:disabled) { opacity: 0.55; cursor: not-allowed; }
+    .toolbar .switch input { width: 36px; height: 20px; cursor: pointer; margin: 0; accent-color: #2563eb; }
+    .toolbar .spacer { flex: 1; }
+    .toolbar .file-name {
+      color: #374151; font-size: 12px; max-width: 300px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      padding: 6px 10px; background: #f3f4f6; border-radius: 999px;
+      border: 1px solid #e5e7eb;
+    }
+    .toolbar .file-name:empty { display: none; }
+    .status-badge {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      color: #64748b;
+      font-size: 12px;
+      padding: 6px 9px;
+      border-radius: 999px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      white-space: nowrap;
+    }
+    .status-badge.visible { display: inline-flex; }
+    .status-badge.dirty {
+      color: #92400e;
+      background: #fffbeb;
+      border-color: #fde68a;
+    }
+    .status-badge::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #94a3b8;
+    }
+    .status-badge.dirty::before { background: #f59e0b; }
+    .canvas {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background:
+        linear-gradient(45deg, #f8fafc 25%, transparent 25%),
+        linear-gradient(-45deg, #f8fafc 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #f8fafc 75%),
+        linear-gradient(-45deg, transparent 75%, #f8fafc 75%);
+      background-size: 24px 24px;
+      background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+    }
+    .canvas.drag-over::after {
+      content: "";
+      position: absolute;
+      inset: 14px;
+      border: 2px dashed #2563eb;
+      border-radius: 14px;
+      background: rgba(37, 99, 235, 0.08);
+      pointer-events: none;
+      z-index: 9996;
+    }
+    .placeholder {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      color: #6b7280; font-size: 15px; pointer-events: none; gap: 12px;
+      text-align: center;
+      padding: 24px;
+    }
+    .placeholder .icon {
+      display: grid;
+      place-items: center;
+      width: 72px;
+      height: 72px;
+      border-radius: 18px;
+      background: white;
+      border: 1px solid #e5e7eb;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+      font-size: 36px;
+    }
+    .placeholder .hint { font-size: 13px; color: #94a3b8; }
+    iframe#viewer {
+      width: 100%; height: 100%; border: none; background: white; display: none;
+    }
+    iframe#viewer.loaded { display: block; }
+    .edit-hint {
+      position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+      background: rgba(31, 41, 55, 0.9); color: white;
+      padding: 8px 16px; border-radius: 20px; font-size: 12px;
+      z-index: 9997; pointer-events: none; opacity: 0;
+      transition: opacity 0.2s; white-space: nowrap;
+    }
+    .edit-hint.visible { opacity: 1; }
+    .overlay {
+      position: fixed; pointer-events: none; z-index: 9998;
+      display: none; border-radius: 2px;
+    }
+    .overlay.visible { display: block; }
+    #hover-overlay {
+      border: 2px solid #3b82f6;
+      background: rgba(59, 130, 246, 0.06);
+      transition: all 0.08s ease-out;
+    }
+    #selected-overlay {
+      border: 2px solid #f59e0b;
+      background: rgba(245, 158, 11, 0.08);
+    }
+    #color-panel {
+      position: fixed; background: white; border: 1px solid #e5e7eb;
+      border-radius: 12px; box-shadow: 0 18px 45px rgba(15, 23, 42, 0.18);
+      padding: 14px; width: 282px; z-index: 10000; font-size: 13px;
+    }
+    #color-panel[hidden] { display: none; }
+    .panel-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid #f3f4f6;
+      cursor: grab; user-select: none;
+    }
+    .panel-header.dragging { cursor: grabbing; }
+    .panel-header .element-info { font-size: 12px; color: #6b7280; }
+    .panel-header .element-info code {
+      color: #1f2937; background: #f3f4f6; padding: 2px 8px; border-radius: 4px;
+      font-size: 11px; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      max-width: 180px; display: inline-block; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom;
+    }
+    .panel-close {
+      background: none; border: none; cursor: pointer; font-size: 20px;
+      color: #9ca3af; padding: 0; width: 22px; height: 22px;
+      line-height: 1; border-radius: 4px;
+    }
+    .panel-close:hover { color: #1f2937; background: #f3f4f6; }
+    .panel-section { margin-bottom: 14px; }
+    .panel-section:last-child { margin-bottom: 0; }
+    .panel-section > label {
+      display: block; font-size: 12px; color: #6b7280;
+      margin-bottom: 6px; font-weight: 500;
+    }
+    .color-row { display: flex; align-items: center; gap: 6px; }
+    .color-row input[type="color"] {
+      width: 38px; height: 32px; border: 1px solid #d1d5db;
+      border-radius: 6px; cursor: pointer; padding: 2px; background: white;
+    }
+    .color-row input[type="text"] {
+      flex: 1; padding: 7px 9px; border: 1px solid #d1d5db;
+      border-radius: 6px; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 12px; min-width: 0;
+    }
+    .color-row input[type="text"]:focus { outline: none; border-color: #3b82f6; }
+    .color-row .clear-btn {
+      padding: 7px 10px; font-size: 11px; background: #f9fafb;
+      border: 1px solid #d1d5db; border-radius: 6px; cursor: pointer;
+      color: #6b7280; white-space: nowrap;
+    }
+    .color-row .clear-btn:hover { background: #f3f4f6; color: #1f2937; }
+    .swatches { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
+    .swatch {
+      width: 100%; aspect-ratio: 1; border: 1px solid #d1d5db;
+      border-radius: 6px; cursor: pointer; padding: 0; transition: transform 0.1s, box-shadow 0.1s;
+    }
+    .swatch:hover { transform: scale(1.15); box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+    .style-row { display: flex; align-items: center; gap: 6px; }
+    .style-row select {
+      flex: 1; padding: 7px 9px; border: 1px solid #d1d5db;
+      border-radius: 6px; font-size: 12px; min-width: 0;
+      background: white; color: #1f2937;
+    }
+    .style-row select:focus { outline: none; border-color: #3b82f6; }
+    .style-row input[type="range"] {
+      width: 100px; accent-color: #2563eb;
+    }
+    .style-row .size-input {
+      width: 60px; padding: 7px 6px; border: 1px solid #d1d5db;
+      border-radius: 6px; font-size: 12px; text-align: center;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+    .style-row .size-input:focus { outline: none; border-color: #3b82f6; }
+    .style-row .size-unit { font-size: 12px; color: #6b7280; }
+    /* ============== 磁吸辅助线 ============== */
+    .snap-line {
+      position: fixed; background: #ef4444; z-index: 99999;
+      pointer-events: none;
+    }
+    .snap-line-h { height: 1px; width: 100vw; left: 0; }
+    .snap-line-v { width: 1px; height: 100vh; top: 0; }
+    /* ============== 浮动色板按钮(hover 时显示) ============== */
+    #color-button {
+      position: fixed;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: white;
+      border: 1px solid #d1d5db;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+      cursor: pointer;
+      z-index: 9999;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      line-height: 1;
+      transition: transform 0.1s, background 0.1s;
+    }
+    #color-button:hover {
+      background: #f9fafb;
+      transform: scale(1.12);
+    }
+    #color-button[hidden] { display: none; }
+    @media (max-width: 720px) {
+      .toolbar {
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 8px;
+      }
+      .toolbar .spacer { display: none; }
+      .toolbar .file-name {
+        order: 10;
+        max-width: none;
+        flex: 1 1 100%;
+      }
+      .status-badge { order: 11; }
+      .edit-hint {
+        max-width: calc(100vw - 24px);
+        white-space: normal;
+        text-align: center;
+        border-radius: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="editor-shell">
+    <header class="toolbar">
+      <button id="btn-open" class="primary">📁 打开 HTML</button>
+      <input type="file" id="file-input" accept=".html,.htm" hidden>
+      <span class="file-name" id="file-name"></span>
+      <span class="status-badge" id="status-badge">未修改</span>
+      <span class="spacer"></span>
+      <label class="switch">
+        <input type="checkbox" id="toggle-edit" disabled>
+        <span>编辑模式</span>
+      </label>
+      <label class="switch" title="用于需要 JavaScript 的 PPT、翻页、动画页面。仅打开可信 HTML。">
+        <input type="checkbox" id="toggle-scripts" disabled>
+        <span>交互预览</span>
+      </label>
+      <label class="switch" title="选中一个元素后,自动选中所有同类型元素,批量修改样式">
+        <input type="checkbox" id="toggle-batch" disabled>
+        <span>全局编辑</span>
+      </label>
+      <label class="switch" title="开启后可拖动元素调整位置">
+        <input type="checkbox" id="toggle-move" disabled>
+        <span>移动模式</span>
+      </label>
+      <button id="btn-reset" disabled>↺ 重置</button>
+      <button id="btn-save" disabled>💾 保存</button>
+    </header>
+    <main class="canvas">
+      <div class="placeholder" id="placeholder">
+        <div class="icon">📄</div>
+        <div>点击「打开 HTML」加载文件,或将 HTML 文件拖到此处</div>
+        <div class="hint">所有处理均在本地完成,文件不会上传</div>
+      </div>
+      <iframe id="viewer" sandbox="allow-same-origin"></iframe>
+      <div class="edit-hint" id="edit-hint">
+        点文字改文字 · 点元素空白处改背景/文字色 · 完成后点「保存」下载
+      </div>
+    </main>
+  </div>
+
+  <div id="hover-overlay" class="overlay"></div>
+  <div id="selected-overlay" class="overlay"></div>
+  <button id="color-button" hidden title="修改此元素颜色">🎨</button>
+
+  <div id="color-panel" hidden>
+    <div class="panel-header">
+      <span class="element-info">元素: <code id="el-tag"></code></span>
+      <button class="panel-close" id="panel-close" title="关闭 (Esc)">×</button>
+    </div>
+    <div class="panel-section">
+      <label>背景色</label>
+      <div class="color-row">
+        <input type="color" id="bg-color" value="#ffffff">
+        <input type="text" id="bg-color-text" value="#ffffff" maxlength="7" spellcheck="false">
+        <button class="clear-btn" data-clear="backgroundColor">清除</button>
+      </div>
+    </div>
+    <div class="panel-section">
+      <label>文字色</label>
+      <div class="color-row">
+        <input type="color" id="text-color" value="#000000">
+        <input type="text" id="text-color-text" value="#000000" maxlength="7" spellcheck="false">
+        <button class="clear-btn" data-clear="color">清除</button>
+      </div>
+    </div>
+    <div class="panel-section">
+      <label>快捷调色板(背景)</label>
+      <div class="swatches" id="swatches"></div>
+    </div>
+    <div class="panel-section">
+      <label>字体</label>
+      <div class="style-row">
+        <select id="font-family">
+          <option value="">继承</option>
+          <optgroup label="通用字体族">
+            <option value="serif">serif</option>
+            <option value="sans-serif">sans-serif</option>
+            <option value="monospace">monospace</option>
+            <option value="cursive">cursive</option>
+          </optgroup>
+          <optgroup label="英文字体">
+            <option value="Arial, sans-serif">Arial</option>
+            <option value="Helvetica, sans-serif">Helvetica</option>
+            <option value="'Times New Roman', serif">Times New Roman</option>
+            <option value="Georgia, serif">Georgia</option>
+            <option value="'Courier New', monospace">Courier New</option>
+          </optgroup>
+          <optgroup label="中文字体">
+            <option value="'Microsoft YaHei', sans-serif">微软雅黑</option>
+            <option value="'PingFang SC', sans-serif">苹方</option>
+            <option value="SimSun, serif">宋体</option>
+            <option value="SimHei, sans-serif">黑体</option>
+          </optgroup>
+        </select>
+        <button class="clear-btn" data-clear="fontFamily">清除</button>
+      </div>
+    </div>
+    <div class="panel-section">
+      <label>字号</label>
+      <div class="style-row">
+        <input type="range" id="font-size" min="8" max="72" value="16">
+        <input type="text" id="font-size-text" class="size-input" value="16" maxlength="3" spellcheck="false">
+        <span class="size-unit">px</span>
+        <button class="clear-btn" data-clear="fontSize">清除</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  (function() {
+    'use strict';
+
+    const state = {
+      originalHTML: '',
+      currentFileName: '',
+      isEditMode: false,
+      allowScripts: false,
+      selectedElement: null,
+      hoveredElement: null,
+      iframeReady: false,
+      isDirty: false,
+      isSaving: false,
+      plaintextOnly: true,
+      batchMode: false,
+      selectedElements: [],
+      moveMode: false,
+      isMoving: false,
+      moveStartX: 0,
+      moveStartY: 0,
+      moveElement: null,
+      snapRefs: null,
+      movedElements: new Map(),
+      scaleLevel: 1.0,
+    };
+
+    const $ = id => document.getElementById(id);
+    const fileInput = $('file-input');
+    const btnOpen = $('btn-open');
+    const btnSave = $('btn-save');
+    const btnReset = $('btn-reset');
+    const toggleEdit = $('toggle-edit');
+    const toggleScripts = $('toggle-scripts');
+    const toggleBatch = $('toggle-batch');
+    const toggleMove = $('toggle-move');
+    const fileName = $('file-name');
+    const statusBadge = $('status-badge');
+    const placeholder = $('placeholder');
+    const viewer = $('viewer');
+    const hoverOverlay = $('hover-overlay');
+    const selectedOverlay = $('selected-overlay');
+    const colorPanel = $('color-panel');
+    const editHint = $('edit-hint');
+    const elTag = $('el-tag');
+    const bgColor = $('bg-color');
+    const bgColorText = $('bg-color-text');
+    const textColor = $('text-color');
+    const textColorText = $('text-color-text');
+    const swatches = $('swatches');
+    const panelClose = $('panel-close');
+    const colorButton = $('color-button');
+    const fontFamilySelect = $('font-family');
+    const fontSizeRange = $('font-size');
+    const fontSizeText = $('font-size-text');
+
+    const SWATCH_COLORS = [
+      '#ffffff', '#000000', '#ef4444', '#f97316',
+      '#eab308', '#22c55e', '#3b82f6', '#a855f7',
+      '#ec4899', '#06b6d4', '#84cc16', '#f59e0b',
+      '#6b7280', '#1f2937', '#fee2e2', '#dbeafe',
+    ];
+
+    function initSwatches() {
+      SWATCH_COLORS.forEach(color => {
+        const btn = document.createElement('button');
+        btn.className = 'swatch';
+        btn.style.backgroundColor = color;
+        btn.dataset.color = color;
+        btn.title = color;
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          applyColor('backgroundColor', color);
+        });
+        swatches.appendChild(btn);
+      });
+    }
+
+    function setDirty(isDirty) {
+      state.isDirty = isDirty;
+      updateStatus();
+    }
+
+    function updateStatus() {
+      if (!state.currentFileName) {
+        statusBadge.classList.remove('visible', 'dirty');
+        statusBadge.textContent = '未修改';
+        return;
+      }
+      statusBadge.classList.add('visible');
+      statusBadge.classList.toggle('dirty', state.isDirty);
+      statusBadge.textContent = state.isDirty ? '有修改' : '未修改';
+    }
+
+    btnOpen.addEventListener('click', () => fileInput.click());
+
+    fileInput.addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (file) loadFile(file);
+      fileInput.value = '';
+    });
+
+    function loadFile(file) {
+      const reader = new FileReader();
+      reader.onload = e => {
+        state.originalHTML = e.target.result;
+        state.currentFileName = file.name;
+        fileName.textContent = file.name;
+        btnSave.disabled = false;
+        btnReset.disabled = false;
+        toggleEdit.disabled = false;
+        toggleScripts.disabled = false;
+        toggleBatch.disabled = false;
+        toggleMove.disabled = false;
+        setDirty(false);
+        loadIntoIframe(state.originalHTML);
+      };
+      reader.onerror = () => alert('读取文件失败: ' + file.name);
+      reader.readAsText(file, 'utf-8');
+    }
+
+    function loadIntoIframe(html) {
+      unbindEditModeEvents();
+      if (state.isEditMode) {
+        state.isEditMode = false;
+        toggleEdit.checked = false;
+        editHint.classList.remove('visible');
+      }
+      if (state.batchMode) {
+        state.batchMode = false;
+        toggleBatch.checked = false;
+      }
+      if (state.moveMode) {
+        state.moveMode = false;
+        toggleMove.checked = false;
+      }
+      state.movedElements = new Map();
+      hideColorPanel();
+      state.iframeReady = false;
+      updateViewerSandbox();
+      viewer.srcdoc = html;
+      viewer.classList.add('loaded');
+      placeholder.style.display = 'none';
+    }
+
+    function updateViewerSandbox() {
+      viewer.setAttribute('sandbox', state.allowScripts ? 'allow-same-origin allow-scripts' : 'allow-same-origin');
+    }
+
+    function stripMoveArtifacts(root) {
+      const body = root.querySelector('body');
+      const bodyChildren = body ? new Set(Array.from(body.children)) : new Set();
+      root.querySelectorAll('*').forEach(el => {
+        if (bodyChildren.has(el)) {
+          const t = el.style.transform;
+          const s = t ? t.match(/scale\(([^)]+)\)/) : null;
+          el.style.transform = s ? 'scale(' + s[1] + ')' : '';
+          if (!s) el.style.removeProperty('transform-origin');
+        } else {
+          el.style.removeProperty('transform');
+        }
+        el.style.removeProperty('will-change');
+      });
+    }
+
+    function getCurrentPreviewHTML() {
+      const doc = viewer.contentDocument;
+      if (!doc) return state.originalHTML;
+      const clone = doc.documentElement.cloneNode(true);
+      const clonedBody = clone.querySelector('body');
+      if (clonedBody) {
+        clonedBody.removeAttribute('contenteditable');
+        clonedBody.style.cursor = '';
+      }
+      stripMoveArtifacts(clone);
+      let html = clone.outerHTML;
+      if (!/^<!DOCTYPE/i.test(html)) {
+        html = '<!DOCTYPE html>\n' + html;
+      }
+      return html;
+    }
+
+    viewer.addEventListener('load', () => {
+      if (viewer.srcdoc) {
+        state.iframeReady = true;
+        if (state.isEditMode) bindEditModeEvents();
+      }
+    });
+
+    btnSave.addEventListener('click', saveFile);
+
+    async function saveFile() {
+      if (!state.iframeReady || state.isSaving) return;
+      const doc = viewer.contentDocument;
+      if (!doc) return;
+      const previousSaveText = btnSave.textContent;
+      state.isSaving = true;
+      btnSave.disabled = true;
+      btnSave.textContent = '保存中...';
+      try {
+        // 克隆一份再清理,避免影响活的 DOM(保留用户的光标位置)
+        const clone = doc.documentElement.cloneNode(true);
+        await inlineLoadedImages(doc, clone);
+        const clonedBody = clone.querySelector('body');
+        if (clonedBody) {
+          clonedBody.removeAttribute('contenteditable');
+          // 移除编辑器可能加在 body 上的 inline 样式
+          clonedBody.style.cursor = '';
+        }
+        stripMoveArtifacts(clone);
+        let html = clone.outerHTML;
+        if (!/^<!DOCTYPE/i.test(html)) {
+          html = '<!DOCTYPE html>\n' + html;
+        }
+        const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const baseName = state.currentFileName.replace(/\.html?$/i, '') || 'untitled';
+        a.download = baseName + '-edited.html';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setDirty(false);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } finally {
+        state.isSaving = false;
+        btnSave.disabled = false;
+        btnSave.textContent = previousSaveText;
+      }
+    }
+
+    async function inlineLoadedImages(sourceDoc, clonedRoot) {
+      const sourceImages = Array.from(sourceDoc.querySelectorAll('img'));
+      const clonedImages = Array.from(clonedRoot.querySelectorAll('img'));
+      await Promise.all(sourceImages.map(async (img, index) => {
+        const clonedImg = clonedImages[index];
+        if (!clonedImg) return;
+        const src = img.currentSrc || img.src || img.getAttribute('src');
+        if (!src || src.startsWith('data:')) return;
+        const dataUrl = await imageToDataUrl(img, src);
+        if (!dataUrl) return;
+        clonedImg.setAttribute('src', dataUrl);
+        clonedImg.removeAttribute('srcset');
+      }));
+    }
+
+    async function imageToDataUrl(img, src) {
+      const fetched = await fetchImageAsDataUrl(src);
+      if (fetched) return fetched;
+      if (!img.complete || !img.naturalWidth || !img.naturalHeight) return null;
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        return canvas.toDataURL('image/png');
+      } catch (err) {
+        return null;
+      }
+    }
+
+    async function fetchImageAsDataUrl(src) {
+      try {
+        const res = await fetch(src);
+        if (!res.ok) return null;
+        const blob = await res.blob();
+        return await blobToDataUrl(blob);
+      } catch (err) {
+        return null;
+      }
+    }
+
+    function blobToDataUrl(blob) {
+      return new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    btnReset.addEventListener('click', () => {
+      if (!state.originalHTML) return;
+      if (state.isDirty) {
+        if (!confirm('确定放弃所有修改,恢复到原始版本?')) return;
+      }
+      setDirty(false);
+      loadIntoIframe(state.originalHTML);
+    });
+
+    document.addEventListener('dragover', e => {
+      e.preventDefault();
+      document.querySelector('.canvas').classList.add('drag-over');
+    });
+    document.addEventListener('dragleave', e => {
+      if (!e.relatedTarget) document.querySelector('.canvas').classList.remove('drag-over');
+    });
+    document.addEventListener('drop', e => {
+      e.preventDefault();
+      document.querySelector('.canvas').classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file && /\.html?$/i.test(file.name)) {
+        loadFile(file);
+      } else if (file) {
+        alert('请拖入 .html 或 .htm 文件');
+      }
+    });
+
+    toggleEdit.addEventListener('change', () => {
+      if (!state.iframeReady) {
+        toggleEdit.checked = false;
+        return;
+      }
+      state.isEditMode = toggleEdit.checked;
+      if (state.isEditMode) enableEditMode();
+      else disableEditMode();
+    });
+
+    toggleScripts.addEventListener('change', () => {
+      if (!state.iframeReady) {
+        toggleScripts.checked = false;
+        return;
+      }
+      if (toggleScripts.checked) {
+        const ok = confirm('交互预览会执行当前 HTML 中的 JavaScript。只建议对可信的本地/AI 生成文件开启。继续吗?');
+        if (!ok) {
+          toggleScripts.checked = false;
+          return;
+        }
+      }
+      const html = getCurrentPreviewHTML();
+      state.allowScripts = toggleScripts.checked;
+      loadIntoIframe(html);
+    });
+
+    toggleBatch.addEventListener('change', () => {
+      state.batchMode = toggleBatch.checked;
+      if (state.selectedElement) {
+        if (state.batchMode) {
+          selectAllSameTag(state.selectedElement);
+        } else {
+          state.selectedElements = [];
+        }
+        updatePanelHeader();
+      }
+    });
+
+    toggleMove.addEventListener('change', () => {
+      state.moveMode = toggleMove.checked;
+      if (state.moveMode) {
+        enableMoveMode();
+      } else {
+        disableMoveMode();
+      }
+    });
+
+    function isPlaintextOnlySupported(doc) {
+      const el = doc.createElement('div');
+      el.contentEditable = 'plaintext-only';
+      return el.contentEditable === 'plaintext-only';
+    }
+
+    function enableEditMode() {
+      const doc = viewer.contentDocument;
+      if (!doc) return;
+      state.plaintextOnly = isPlaintextOnlySupported(doc);
+      doc.body.contentEditable = state.plaintextOnly ? 'plaintext-only' : 'true';
+      const style = doc.createElement('style');
+      style.id = 'edit-mode-css';
+      style.textContent = 'html{white-space:normal!important}body{user-select:text;-webkit-user-select:text}';
+      doc.head.appendChild(style);
+      editHint.classList.add('visible');
+      bindEditModeEvents();
+    }
+
+    function disableEditMode() {
+      const doc = viewer.contentDocument;
+      if (!doc) return;
+      doc.body.removeAttribute('contenteditable');
+      doc.body.contentEditable = 'inherit';
+      const style = doc.getElementById('edit-mode-css');
+      if (style) style.remove();
+      editHint.classList.remove('visible');
+      unbindEditModeEvents();
+      hideColorPanel();
+      hoverOverlay.classList.remove('visible');
+      hideColorButtonNow();
+    }
+
+    function enableMoveMode() {
+      const doc = viewer.contentDocument;
+      if (!doc) return;
+      const style = doc.createElement('style');
+      style.id = 'move-mode-css';
+      style.textContent = '*, *::before, *::after { cursor: move !important; } body { cursor: crosshair !important; }';
+      doc.head.appendChild(style);
+    }
+
+    function disableMoveMode() {
+      const doc = viewer.contentDocument;
+      if (!doc) return;
+      const style = doc.getElementById('move-mode-css');
+      if (style) style.remove();
+      state.isMoving = false;
+      state.moveElement = null;
+      hideSnapLines();
+      hoverOverlay.classList.remove('visible');
+      selectedOverlay.classList.remove('visible');
+    }
+
+    // ============== 元素拖动移动 ==============
+    function startMove(el, e) {
+      state.isMoving = true;
+      state.moveElement = el;
+      state.moveStartX = e.clientX;
+      state.moveStartY = e.clientY;
+      // 记录目标绝对位置（当前视觉位置）
+      const iframeRect = viewer.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      const ct = el.style.transform || '';
+      const m = ct.match(/translate\(([-\d.]+)px,\s*([-\d.]+)px\)/);
+      const curDx = m ? parseFloat(m[1]) : 0;
+      const curDy = m ? parseFloat(m[2]) : 0;
+      state.movedElements.set(el, {
+        targetX: elRect.left - iframeRect.left + curDx,
+        targetY: elRect.top - iframeRect.top + curDy,
+      });
+      updateOverlayPosition(selectedOverlay, el);
+      selectedOverlay.classList.add('visible');
+      hoverOverlay.classList.remove('visible');
+      collectSnapReferences();
+    }
+
+    function updateMove(e) {
+      const el = state.moveElement;
+      if (!el) return;
+      const info = state.movedElements.get(el);
+      let dx = e.clientX - state.moveStartX;
+      let dy = e.clientY - state.moveStartY;
+      const snapped = applySnap(el, dx, dy);
+      dx = snapped.dx;
+      dy = snapped.dy;
+      el.style.transform = 'translate(' + dx + 'px, ' + dy + 'px)';
+      el.style.willChange = 'transform';
+      if (info) {
+        const iframeRect = viewer.getBoundingClientRect();
+        const elRect = el.getBoundingClientRect();
+        info.targetX = elRect.left - iframeRect.left + dx;
+        info.targetY = elRect.top - iframeRect.top + dy;
+      }
+      updateOverlayPosition(selectedOverlay, el);
+    }
+
+    function endMove() {
+      if (!state.isMoving) return;
+      state.isMoving = false;
+      hideSnapLines();
+      setDirty(true);
+    }
+
+    // ============== 磁吸系统 ==============
+    const SNAP_THRESHOLD = 6;
+
+    function collectSnapReferences() {
+      const iframeRect = viewer.getBoundingClientRect();
+      const win = viewer.contentWindow;
+      const pageWidth = win.innerWidth;
+      const pageHeight = win.innerHeight;
+      state.snapRefs = {
+        xLines: [0, pageWidth / 2, pageWidth],
+        yLines: [0, pageHeight / 2, pageHeight],
+        siblings: [],
+      };
+      const parent = state.moveElement.parentElement;
+      if (parent) {
+        Array.from(parent.children).forEach(child => {
+          if (child === state.moveElement || !isValidElement(child)) return;
+          const r = child.getBoundingClientRect();
+          const l = r.left - iframeRect.left;
+          const t = r.top - iframeRect.top;
+          state.snapRefs.xLines.push(l, l + r.width / 2, l + r.width);
+          state.snapRefs.yLines.push(t, t + r.height / 2, t + r.height);
+          state.snapRefs.siblings.push({
+            left: l, right: l + r.width, centerX: l + r.width / 2,
+            top: t, bottom: t + r.height, centerY: t + r.height / 2,
+          });
+        });
+      }
+    }
+
+    function applySnap(el, dx, dy) {
+      const iframeRect = viewer.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      const curLeft = elRect.left - iframeRect.left + dx;
+      const curTop = elRect.top - iframeRect.top + dy;
+      const curRight = curLeft + elRect.width;
+      const curBottom = curTop + elRect.height;
+      const curCX = curLeft + elRect.width / 2;
+      const curCY = curTop + elRect.height / 2;
+      const refs = state.snapRefs;
+      let bestDx = SNAP_THRESHOLD + 1, bestDy = SNAP_THRESHOLD + 1;
+      let snapLineX = null, snapLineY = null;
+      [curLeft, curRight, curCX].forEach(elVal => {
+        refs.xLines.forEach(ref => {
+          const d = Math.abs(elVal - ref);
+          if (d < SNAP_THRESHOLD && d < Math.abs(bestDx)) {
+            bestDx = elVal - ref;
+            snapLineX = ref;
+          }
+        });
+      });
+      [curTop, curBottom, curCY].forEach(elVal => {
+        refs.yLines.forEach(ref => {
+          const d = Math.abs(elVal - ref);
+          if (d < SNAP_THRESHOLD && d < Math.abs(bestDy)) {
+            bestDy = elVal - ref;
+            snapLineY = ref;
+          }
+        });
+      });
+      const snapDx = Math.abs(bestDx) <= SNAP_THRESHOLD ? dx - bestDx : dx;
+      const snapDy = Math.abs(bestDy) <= SNAP_THRESHOLD ? dy - bestDy : dy;
+      showSnapLines(snapLineX, snapLineY);
+      return { dx: snapDx, dy: snapDy };
+    }
+
+    function showSnapLines(x, y) {
+      hideSnapLines();
+      const iframeRect = viewer.getBoundingClientRect();
+      if (x !== null) {
+        const line = document.createElement('div');
+        line.className = 'snap-line snap-line-v';
+        line.style.left = (iframeRect.left + x) + 'px';
+        document.body.appendChild(line);
+      }
+      if (y !== null) {
+        const line = document.createElement('div');
+        line.className = 'snap-line snap-line-h';
+        line.style.top = (iframeRect.top + y) + 'px';
+        document.body.appendChild(line);
+      }
+    }
+
+    function hideSnapLines() {
+      document.querySelectorAll('.snap-line').forEach(l => l.remove());
+    }
+
+    let boundHandlers = null;
+    let originalExecCommand = null;
+
+    function bindEditModeEvents() {
+      const doc = viewer.contentDocument;
+      if (!doc) return;
+      unbindEditModeEvents();
+
+      const handleMouseMove = (e) => {
+        if (!state.isEditMode) return;
+        if (state.moveMode) {
+          if (state.isMoving) {
+            updateMove(e);
+          } else {
+            const el = e.target;
+            if (isValidElement(el)) {
+              state.hoveredElement = el;
+              updateOverlayPosition(hoverOverlay, el);
+              hoverOverlay.classList.add('visible');
+            } else {
+              hoverOverlay.classList.remove('visible');
+            }
+          }
+          return;
+        }
+        if (state.selectedElement) {
+          hoverOverlay.classList.remove('visible');
+          hideColorButton();
+          return;
+        }
+        const el = e.target;
+        if (!isValidElement(el)) {
+          hoverOverlay.classList.remove('visible');
+          hideColorButton();
+          return;
+        }
+        state.hoveredElement = el;
+        updateOverlayPosition(hoverOverlay, el);
+        hoverOverlay.classList.add('visible');
+        showColorButton(el);
+      };
+
+      const handleMouseLeave = () => {
+        hoverOverlay.classList.remove('visible');
+        hideColorButton();
+      };
+
+      const handleMouseDown = (e) => {
+        if (!state.isEditMode) return;
+        if (state.moveMode) {
+          const el = e.target;
+          if (!isValidElement(el)) return;
+          e.preventDefault();
+          e.stopPropagation();
+          startMove(el, e);
+          return;
+        }
+        // 点击位置是否落在文字上(用 caretPosition 精确判断)
+        if (isPointInText(e.clientX, e.clientY)) {
+          e.stopPropagation();
+          return;
+        }
+        if (!isValidElement(e.target)) return;
+        e.preventDefault();
+        e.stopPropagation();
+      };
+
+      const handleClick = (e) => {
+        if (!state.isEditMode) return;
+        if (state.moveMode) return;
+        const el = e.target;
+        if (el === doc.body || el === doc.documentElement) {
+          hideColorPanel();
+          return;
+        }
+        // 点击位置是否落在文字上 → 交给浏览器原生处理(进入文字编辑)
+        if (isPointInText(e.clientX, e.clientY)) {
+          e.stopPropagation();
+          return;
+        }
+        if (!isValidElement(el)) {
+          hideColorPanel();
+          return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        showColorPanel(el);
+      };
+
+      const handleKeyDown = (e) => {
+        if (state.isEditMode) e.stopPropagation();
+        if (e.key !== 'Backspace' && e.key !== 'Delete') return;
+        const sel = doc.getSelection();
+        if (!sel || !sel.isCollapsed) return;
+        if (!sel.rangeCount) {
+          e.preventDefault();
+          return;
+        }
+        const range = sel.getRangeAt(0);
+        const node = range.startContainer;
+        if (node.nodeType !== Node.TEXT_NODE) {
+          e.preventDefault();
+          return;
+        }
+        const text = node.textContent;
+        const offset = range.startOffset;
+        if (e.key === 'Backspace' && offset === 0) {
+          const parent = node.parentNode;
+          if (parent && parent.textContent.trim() === '' &&
+              parent.children.length === 0 &&
+              parent !== doc.body) {
+            e.preventDefault();
+          }
+        } else if (e.key === 'Delete' && offset === text.length) {
+          e.preventDefault();
+        }
+      };
+
+      const handleBeforeInput = (e) => {
+        if (!state.isEditMode) return;
+        e.stopPropagation();
+        const inputType = e.inputType || '';
+
+        // Firefox 不支持 plaintext-only,降级为 contentEditable="true" 时
+        // 需要更严格地拦截所有非纯文本输入,防止富文本污染
+        if (!state.plaintextOnly) {
+          const allowedTypes = ['insertText', 'deleteContentBackward', 'deleteContentForward'];
+          if (!allowedTypes.includes(inputType)) {
+            e.preventDefault();
+            return;
+          }
+          if (!isSafeTextSelection(doc, inputType)) {
+            e.preventDefault();
+            return;
+          }
+          return;
+        }
+
+        const blockedTypes = [
+          'insertParagraph',
+          'insertLineBreak',
+          'insertOrderedList',
+          'insertUnorderedList',
+          'insertHorizontalRule',
+          'formatBold',
+          'formatItalic',
+          'formatUnderline',
+          'formatStrikeThrough',
+        ];
+        if (blockedTypes.includes(inputType) || inputType.startsWith('format')) {
+          e.preventDefault();
+          return;
+        }
+        if (inputType === 'insertFromPaste' || inputType === 'insertFromDrop' || inputType === 'insertHTML') {
+          e.preventDefault();
+          return;
+        }
+        if (inputType.startsWith('delete') || inputType === 'insertText') {
+          if (!isSafeTextSelection(doc, inputType)) {
+            e.preventDefault();
+            return;
+          }
+        }
+      };
+
+      const handleInput = () => {
+        setDirty(true);
+        refreshFloatingUI();
+      };
+
+      const handlePaste = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+        if (text && isSafeTextSelection(doc, 'insertText')) {
+          doc.execCommand('insertText', false, text);
+          setDirty(true);
+          refreshFloatingUI();
+        }
+      };
+
+      const handleDrop = (e) => e.preventDefault();
+      const handleDragOver = (e) => e.preventDefault();
+      const handleScrollOrResize = () => refreshFloatingUI();
+
+      const handleMouseUp = () => {
+        if (state.moveMode && state.isMoving) {
+          endMove();
+        }
+      };
+
+      // Firefox 不支持 plaintext-only 时,拦截 execCommand 防止键盘快捷键触发富文本格式
+      if (!state.plaintextOnly) {
+        originalExecCommand = doc.execCommand.bind(doc);
+        doc.execCommand = function(cmd) {
+          const blocked = ['bold', 'italic', 'underline', 'strikeThrough',
+            'insertOrderedList', 'insertUnorderedList', 'insertHorizontalRule',
+            'formatBlock', 'removeFormat', 'subscript', 'superscript'];
+          if (blocked.includes(cmd)) return false;
+          return originalExecCommand.apply(doc, arguments);
+        };
+      }
+
+      doc.addEventListener('mousemove', handleMouseMove, true);
+      doc.addEventListener('mouseleave', handleMouseLeave, true);
+      doc.addEventListener('mousedown', handleMouseDown, true);
+      doc.addEventListener('mouseup', handleMouseUp, true);
+      doc.addEventListener('click', handleClick, true);
+      doc.addEventListener('keydown', handleKeyDown, true);
+      doc.addEventListener('beforeinput', handleBeforeInput, true);
+      doc.addEventListener('input', handleInput, true);
+      doc.addEventListener('paste', handlePaste, true);
+      doc.addEventListener('drop', handleDrop, true);
+      doc.addEventListener('dragover', handleDragOver, true);
+      doc.addEventListener('scroll', handleScrollOrResize, true);
+      window.addEventListener('resize', handleScrollOrResize);
+      document.addEventListener('mouseup', handleMouseUp);
+
+      boundHandlers = {
+        handleMouseMove, handleMouseLeave, handleMouseDown, handleMouseUp, handleClick,
+        handleKeyDown, handleBeforeInput, handleInput, handlePaste,
+        handleDrop, handleDragOver, handleScrollOrResize,
+      };
+    }
+
+    function unbindEditModeEvents() {
+      const doc = viewer.contentDocument;
+      if (!doc || !boundHandlers) return;
+      if (originalExecCommand) {
+        doc.execCommand = originalExecCommand;
+        originalExecCommand = null;
+      }
+      const f = boundHandlers;
+      doc.removeEventListener('mousemove', f.handleMouseMove, true);
+      doc.removeEventListener('mouseleave', f.handleMouseLeave, true);
+      doc.removeEventListener('mousedown', f.handleMouseDown, true);
+      doc.removeEventListener('mouseup', f.handleMouseUp, true);
+      doc.removeEventListener('click', f.handleClick, true);
+      doc.removeEventListener('keydown', f.handleKeyDown, true);
+      doc.removeEventListener('beforeinput', f.handleBeforeInput, true);
+      doc.removeEventListener('input', f.handleInput, true);
+      doc.removeEventListener('paste', f.handlePaste, true);
+      doc.removeEventListener('drop', f.handleDrop, true);
+      doc.removeEventListener('dragover', f.handleDragOver, true);
+      doc.removeEventListener('scroll', f.handleScrollOrResize, true);
+      window.removeEventListener('resize', f.handleScrollOrResize);
+      document.removeEventListener('mouseup', f.handleMouseUp);
+      boundHandlers = null;
+    }
+
+    function isSafeTextSelection(doc, inputType) {
+      const sel = doc.getSelection();
+      if (!sel || !sel.rangeCount) return false;
+      const range = sel.getRangeAt(0);
+      const start = range.startContainer;
+      const end = range.endContainer;
+      if (start.nodeType !== Node.TEXT_NODE || end.nodeType !== Node.TEXT_NODE) return false;
+      if (start !== end) return false;
+      if (!range.collapsed) return true;
+      const textLength = start.textContent.length;
+      if (inputType === 'deleteContentBackward') return range.startOffset > 0;
+      if (inputType === 'deleteContentForward') return range.startOffset < textLength;
+      if (inputType.startsWith('delete')) return false;
+      return true;
+    }
+
+    function isValidElement(el) {
+      if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+      const tag = el.tagName.toLowerCase();
+      const skipTags = ['html', 'head', 'body', 'meta', 'link', 'script', 'style', 'title', 'br', 'hr', 'noscript'];
+      if (skipTags.includes(tag)) return false;
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    }
+
+    // 精确判断点击坐标是否落在文字节点上
+    // (不能用 e.target 判断:点击文字时 Chrome 返回的是父元素,不是 Text 节点)
+    function isPointInText(x, y) {
+      const doc = viewer.contentDocument;
+      if (!doc) return false;
+      if (typeof doc.caretPositionFromPoint === 'function') {
+        const pos = doc.caretPositionFromPoint(x, y);
+        return !!(pos && pos.offsetNode && pos.offsetNode.nodeType === Node.TEXT_NODE);
+      }
+      if (typeof doc.caretRangeFromPoint === 'function') {
+        const range = doc.caretRangeFromPoint(x, y);
+        return !!(range && range.startContainer && range.startContainer.nodeType === Node.TEXT_NODE);
+      }
+      return false;
+    }
+
+    function updateOverlayPosition(overlay, el) {
+      const rect = el.getBoundingClientRect();
+      const iframeRect = viewer.getBoundingClientRect();
+      overlay.style.left = (rect.left + iframeRect.left) + 'px';
+      overlay.style.top = (rect.top + iframeRect.top) + 'px';
+      overlay.style.width = rect.width + 'px';
+      overlay.style.height = rect.height + 'px';
+    }
+
+    function refreshFloatingUI() {
+      if (state.selectedElement && isValidElement(state.selectedElement)) {
+        updateOverlayPosition(selectedOverlay, state.selectedElement);
+      } else {
+        selectedOverlay.classList.remove('visible');
+      }
+      if (state.hoveredElement && isValidElement(state.hoveredElement) && !state.selectedElement) {
+        updateOverlayPosition(hoverOverlay, state.hoveredElement);
+        showColorButton(state.hoveredElement);
+      } else {
+        hoverOverlay.classList.remove('visible');
+      }
+    }
+
+    // ============== 浮动色板按钮 ==============
+    let hideButtonTimer = null;
+    const BTN_SIZE = 28;
+
+    function showColorButton(el) {
+      if (hideButtonTimer) {
+        clearTimeout(hideButtonTimer);
+        hideButtonTimer = null;
+      }
+      const rect = el.getBoundingClientRect();
+      const iframeRect = viewer.getBoundingClientRect();
+      // 放在元素右上角内侧,稍微凸出一半
+      const left = rect.right + iframeRect.left - BTN_SIZE + 4;
+      const top = rect.top + iframeRect.top - 4;
+      // 防止按钮超出视口
+      const maxLeft = window.innerWidth - BTN_SIZE - 4;
+      const maxTop = window.innerHeight - BTN_SIZE - 4;
+      colorButton.style.left = Math.max(4, Math.min(maxLeft, left)) + 'px';
+      colorButton.style.top = Math.max(4, Math.min(maxTop, top)) + 'px';
+      colorButton.hidden = false;
+    }
+
+    function hideColorButton() {
+      if (hideButtonTimer) clearTimeout(hideButtonTimer);
+      // 延时 100ms,给用户从 iframe 移到按钮的时间
+      hideButtonTimer = setTimeout(() => {
+        colorButton.hidden = true;
+        state.hoveredElement = null;
+        hideButtonTimer = null;
+      }, 100);
+    }
+
+    function hideColorButtonNow() {
+      if (hideButtonTimer) {
+        clearTimeout(hideButtonTimer);
+        hideButtonTimer = null;
+      }
+      colorButton.hidden = true;
+      state.hoveredElement = null;
+    }
+
+    // 鼠标进入按钮 → 取消隐藏
+    colorButton.addEventListener('mouseenter', () => {
+      if (hideButtonTimer) {
+        clearTimeout(hideButtonTimer);
+        hideButtonTimer = null;
+      }
+    });
+    // 鼠标离开按钮 → 延时隐藏
+    colorButton.addEventListener('mouseleave', hideColorButton);
+
+    // 点击按钮 → 弹出当前 hover 元素的色板
+    colorButton.addEventListener('click', e => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (state.hoveredElement) {
+        const el = state.hoveredElement;
+        hideColorButtonNow();
+        showColorPanel(el);
+      }
+    });
+
+    function showColorPanel(el) {
+      state.selectedElement = el;
+      if (state.batchMode) {
+        selectAllSameTag(el);
+      } else {
+        state.selectedElements = [];
+      }
+      hoverOverlay.classList.remove('visible');
+      updateOverlayPosition(selectedOverlay, el);
+      selectedOverlay.classList.add('visible');
+
+      const win = viewer.contentWindow;
+      const computed = win.getComputedStyle(el);
+      const bg = computed.backgroundColor;
+      const text = computed.color;
+
+      updatePanelHeader();
+
+      const bgHex = rgbToHex(bg) || '#ffffff';
+      const textHex = rgbToHex(text) || '#000000';
+      bgColor.value = bgHex;
+      bgColorText.value = bgHex;
+      textColor.value = textHex;
+      textColorText.value = textHex;
+
+      // 读取字体
+      const ff = computed.fontFamily;
+      const ffOptions = Array.from(fontFamilySelect.options).map(o => o.value);
+      fontFamilySelect.value = ffOptions.includes(ff) ? ff : '';
+
+      // 读取字号
+      const fs = computed.fontSize;
+      const fsNum = parseInt(fs, 10) || 16;
+      fontSizeRange.value = Math.min(72, Math.max(8, fsNum));
+      fontSizeText.value = fsNum;
+
+      const rect = el.getBoundingClientRect();
+      const iframeRect = viewer.getBoundingClientRect();
+      const panelHeight = 360;
+      const panelWidth = 270;
+      let top = rect.bottom + iframeRect.top + 8;
+      let left = rect.left + iframeRect.left;
+
+      if (top + panelHeight > window.innerHeight - 8) {
+        top = rect.top + iframeRect.top - panelHeight - 8;
+      }
+      if (left + panelWidth > window.innerWidth - 8) {
+        left = window.innerWidth - panelWidth - 8;
+      }
+
+      colorPanel.style.top = Math.max(8, top) + 'px';
+      colorPanel.style.left = Math.max(8, left) + 'px';
+      colorPanel.hidden = false;
+    }
+
+    function describeElement(el) {
+      let desc = el.tagName.toLowerCase();
+      if (el.id) desc += '#' + el.id;
+      if (el.className && typeof el.className === 'string') {
+        const cls = el.className.trim().split(/\s+/).slice(0, 2).join('.');
+        if (cls) desc += '.' + cls;
+      }
+      return desc;
+    }
+
+    function selectAllSameTag(el) {
+      const tag = el.tagName.toLowerCase();
+      const doc = viewer.contentDocument;
+      const all = Array.from(doc.querySelectorAll(tag));
+      state.selectedElements = all.filter(e => isValidElement(e));
+    }
+
+    function updatePanelHeader() {
+      const el = state.selectedElement;
+      if (!el) return;
+      const desc = describeElement(el);
+      const count = state.selectedElements.length;
+      elTag.textContent = count > 1 ? desc + ' (共 ' + count + ' 个)' : desc;
+      elTag.title = elTag.textContent;
+    }
+
+    function hideColorPanel() {
+      colorPanel.hidden = true;
+      selectedOverlay.classList.remove('visible');
+      state.selectedElement = null;
+      state.selectedElements = [];
+    }
+
+    function applyColor(prop, value) {
+      if (!state.selectedElement) return;
+      const targets = state.selectedElements.length > 0 ? state.selectedElements : [state.selectedElement];
+      const before = state.selectedElement.style[prop];
+      targets.forEach(el => {
+        if (value === null || value === '') {
+          el.style[prop] = '';
+        } else {
+          el.style[prop] = value;
+        }
+      });
+      if (targets.length > 1 || state.selectedElement.style[prop] !== before) {
+        setDirty(true);
+      }
+      const win = viewer.contentWindow;
+      const computed = win.getComputedStyle(state.selectedElement);
+      if (prop === 'backgroundColor') {
+        const hex = rgbToHex(computed.backgroundColor) || '#ffffff';
+        bgColor.value = hex;
+        bgColorText.value = hex;
+      } else if (prop === 'color') {
+        const hex = rgbToHex(computed.color) || '#000000';
+        textColor.value = hex;
+        textColorText.value = hex;
+      } else if (prop === 'fontFamily') {
+        fontFamilySelect.value = value || '';
+      } else if (prop === 'fontSize') {
+        const fsNum = parseInt(computed.fontSize, 10) || 16;
+        fontSizeRange.value = Math.min(72, Math.max(8, fsNum));
+        fontSizeText.value = fsNum;
+      }
+    }
+
+    function rgbToHex(rgb) {
+      if (!rgb || rgb === 'transparent' || rgb === 'rgba(0, 0, 0, 0)') {
+        return null;
+      }
+      const match = rgb.match(/rgba?\(([^)]+)\)/);
+      if (!match) {
+        if (rgb.startsWith('#')) {
+          return rgb.length === 4 ? expandShortHex(rgb) : rgb.toLowerCase();
+        }
+        return null;
+      }
+      const parts = match[1].split(',').map(s => parseInt(s.trim(), 10));
+      if (parts.length < 3 || parts.some(isNaN)) return null;
+      const [r, g, b] = parts;
+      return '#' + [r, g, b].map(n => Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0')).join('');
+    }
+
+    function expandShortHex(hex) {
+      return '#' + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3];
+    }
+
+    function normalizeHex(val) {
+      if (!val) return null;
+      val = val.trim();
+      if (!val.startsWith('#')) val = '#' + val;
+      if (/^#[0-9a-fA-F]{3}$/.test(val)) return expandShortHex(val.toLowerCase());
+      if (/^#[0-9a-fA-F]{6}$/.test(val)) return val.toLowerCase();
+      return null;
+    }
+
+    bgColor.addEventListener('input', e => {
+      const val = e.target.value;
+      bgColorText.value = val;
+      applyColor('backgroundColor', val);
+    });
+    bgColorText.addEventListener('input', e => {
+      const val = e.target.value;
+      const normalized = normalizeHex(val);
+      if (normalized) {
+        bgColor.value = normalized;
+        applyColor('backgroundColor', normalized);
+      }
+    });
+    textColor.addEventListener('input', e => {
+      const val = e.target.value;
+      textColorText.value = val;
+      applyColor('color', val);
+    });
+    textColorText.addEventListener('input', e => {
+      const val = e.target.value;
+      const normalized = normalizeHex(val);
+      if (normalized) {
+        textColor.value = normalized;
+        applyColor('color', normalized);
+      }
+    });
+
+    fontFamilySelect.addEventListener('change', e => {
+      applyColor('fontFamily', e.target.value);
+    });
+
+    fontSizeRange.addEventListener('input', e => {
+      const val = e.target.value;
+      fontSizeText.value = val;
+      applyColor('fontSize', val + 'px');
+    });
+
+    fontSizeText.addEventListener('input', e => {
+      const val = parseInt(e.target.value, 10);
+      if (!isNaN(val) && val >= 1 && val <= 200) {
+        fontSizeRange.value = Math.min(72, Math.max(8, val));
+        applyColor('fontSize', val + 'px');
+      }
+    });
+
+    document.querySelectorAll('.clear-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        applyColor(btn.dataset.clear, '');
+      });
+    });
+
+    panelClose.addEventListener('click', hideColorPanel);
+
+    function applyGlobalScale(delta) {
+      const doc = viewer.contentDocument;
+      if (!doc) return;
+      state.scaleLevel = Math.max(0.1, Math.min(5, state.scaleLevel + delta));
+      Array.from(doc.body.children).forEach(el => {
+        if (state.scaleLevel === 1) {
+          el.style.transform = '';
+        } else {
+          el.style.transform = 'scale(' + state.scaleLevel + ')';
+          el.style.transformOrigin = '0 0';
+        }
+      });
+    }
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && !colorPanel.hidden) {
+        hideColorPanel();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        if (!btnSave.disabled) saveFile();
+      }
+      if (state.isEditMode && e.shiftKey) {
+        if (e.key === '+' || e.key === '=') {
+          e.preventDefault();
+          applyGlobalScale(0.1);
+        } else if (e.key === '-') {
+          e.preventDefault();
+          applyGlobalScale(-0.1);
+        }
+      }
+    });
+
+    initSwatches();
+
+    // ============== 面板拖拽 ==============
+    let isDragging = false;
+    let dragOffsetX = 0;
+    let dragOffsetY = 0;
+    const panelHeader = colorPanel.querySelector('.panel-header');
+
+    panelHeader.addEventListener('mousedown', e => {
+      if (colorPanel.hidden) return;
+      isDragging = true;
+      dragOffsetX = e.clientX - colorPanel.offsetLeft;
+      dragOffsetY = e.clientY - colorPanel.offsetTop;
+      panelHeader.classList.add('dragging');
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', e => {
+      if (!isDragging) return;
+      let left = e.clientX - dragOffsetX;
+      let top = e.clientY - dragOffsetY;
+      left = Math.max(0, Math.min(window.innerWidth - colorPanel.offsetWidth, left));
+      top = Math.max(0, Math.min(window.innerHeight - colorPanel.offsetHeight, top));
+      colorPanel.style.left = left + 'px';
+      colorPanel.style.top = top + 'px';
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (!isDragging) return;
+      isDragging = false;
+      panelHeader.classList.remove('dragging');
+    });
+  })();
+  </script>
+</body>
+</html>
