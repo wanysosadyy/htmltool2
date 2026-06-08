@@ -21,7 +21,11 @@ Everything else, including structure, layout, CSS, images, and animations, is pr
 - Safer preview: scripts inside the edited HTML are disabled by default
 - Interactive preview: optionally enable scripts for animated decks, page flipping, and JavaScript-driven pages
 - Plain-text editing: pasted content is inserted without rich formatting
-- Color panel: edit background color, text color, HEX values, and preset swatches
+- Style panel: edit background color, text color, font family, font size, HEX values, and preset swatches
+- Batch editing: select one element and all same-tag elements are selected automatically for bulk style changes
+- Element move: drag elements to reposition them with magnetic snap alignment guides
+- Global zoom: keyboard shortcuts to scale all elements up or down, persisted in saved output
+- Draggable panel: the color panel can be dragged to avoid covering content
 - Change status: see whether the current file has unsaved edits
 - Drag and drop: drop `.html` / `.htm` files into the window
 - Image preservation: loaded `<img>` assets are inlined when saving whenever the browser allows it
@@ -57,6 +61,18 @@ http://127.0.0.1:8765/index.html
 5. Click empty space inside an element, or use the floating color button, to open the color panel
 6. Click "Save" to download `original-name-edited.html`
 
+### Batch Editing
+
+Toggle "Batch edit" on, then select an element. All elements with the same tag are selected automatically, allowing you to change background color, text color, font, and size across all of them at once.
+
+### Element Move
+
+Toggle "Move mode" on to drag elements and reposition them. Red magnetic snap lines appear at edges, centers, and neighboring elements to help with alignment. Move positions are saved in the output file.
+
+### Global Zoom
+
+With edit mode active, use keyboard shortcuts to scale all elements proportionally. The zoom level is saved in the output file.
+
 For animated HTML presentations or page-flipping files, turn on "Interactive preview" before editing. This lets the page's own JavaScript initialize slides, animations, and navigation.
 
 Shortcuts:
@@ -65,6 +81,8 @@ Shortcuts:
 | --- | --- |
 | `Ctrl` / `Cmd` + `S` | Save current result |
 | `Esc` | Close the color panel |
+| `Shift` + `+` / `=` | Zoom in all elements (10% per press) |
+| `Shift` + `-` | Zoom out all elements (10% per press) |
 
 ## Security Notes
 
@@ -81,11 +99,13 @@ Please still keep these points in mind:
 
 - Saved HTML may differ in whitespace, attribute order, and serialization details
 - Structural editing is intentionally unsupported
-- Color edits are written as inline styles
+- Color, font, and size edits are written as inline styles
+- Element moves and global zoom use CSS `transform`, written as inline styles
 - Relative assets may not resolve from the original HTML file location when using `srcdoc`
 - Images that cannot be fetched by the browser are kept as their original paths
 - JavaScript-driven pages need "Interactive preview" enabled before editing
 - Firefox support for `contenteditable="plaintext-only"` differs from Chromium browsers
+- Move mode position calculations may be inaccurate for elements on hidden slides in multi-page layouts
 
 ## Browser Compatibility
 
@@ -111,10 +131,8 @@ Safari and Firefox may work, but editing behavior and color picker behavior can 
 
 - Undo / redo
 - Multi-file tabs
-- Font size and font family editing
 - Gradient background editing
 - More precise text-node editing mode
-- Optional script-enabled preview mode
 - Chrome extension version
 
 ## Contributing
