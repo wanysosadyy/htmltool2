@@ -81,8 +81,8 @@ Shortcuts:
 | --- | --- |
 | `Ctrl` / `Cmd` + `S` | Save current result |
 | `Esc` | Close the color panel |
-| `Shift` + `+` / `=` | Zoom in all elements (10% per press) |
-| `Shift` + `-` | Zoom out all elements (10% per press) |
+| `Shift` + `+` / `=` | Zoom in all elements (1% per press) |
+| `Shift` + `-` | Zoom out all elements (1% per press) |
 
 ## Security Notes
 
